@@ -7,51 +7,64 @@ import json
 from tkinter import messagebox, ttk
 import unicodedata
 
-# Константы для информации о сотруднике и компании
-EMPLOYEE_NAME = "dmitryace"
-COMPANY_NAME = "WebStead"
-EMPLOYEE_POSITION = "Бэкэнд-разработчик"
+# Конфигурационный файл
+CONFIG_FILE = "config.json"
 
+# Загрузка конфигурации
+def load_config():
+    default_config = {
+        "companies": {
+            "WebStead": {
+                "positions": ["Бэкэнд-разработчик", "Фронтенд-разработчик"],
+                "employees": ["dmitryace", "ivanov_ivan"]
+            },
+            "TechSolutions": {
+                "positions": ["Системный администратор", "DevOps инженер"],
+                "employees": ["petrov_petr", "sidorova_anna"]
+            }
+        },
+        "default_company": "WebStead"
+    }
+    
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return default_config
+    return default_config
+
+# Класс PDF с поддержкой Unicode
 class UnicodePDF(FPDF):
-    """Класс PDF с поддержкой Unicode и кириллицы"""
     def __init__(self):
         super().__init__()
-        # Adding DejaVu fonts for regular and bold styles
         try:
             self.add_font('DejaVu', '', r'fonts\DejaVuSans.ttf', uni=True)
             self.add_font('DejaVu', 'B', r'fonts\DejaVuSans-Bold.ttf', uni=True)
-            self.set_font('DejaVu', '', 12)  # Set default font
-        except Exception as e:
-            raise Exception(f"Failed to load font: {str(e)}")
-
+            self.set_font('DejaVu', '', 12)
+        except:
+            # Fallback if fonts not found
+            self.set_font("Arial", "", 12)
+            
     def header(self):
-        # Заголовок будет реализован в каждой странице отдельно
         pass
-        
-    def add_unicode_text(self, text, size=10, style=''):
-        """Добавляет текст с поддержкой Unicode"""
-        # Создаем временный файл для корректной обработки Unicode
-        temp_file = "temp_text.txt"
-        with open(temp_file, "w", encoding="utf-8") as f:
-            f.write(text)
-            
-        with open(temp_file, "r", encoding="utf-8") as f:
-            txt = f.read()
-            
-        # Добавляем текст в PDF
-        self.set_font("Arial", style, size)
-        self.multi_cell(0, 5, txt)
-        
-        # Удаляем временный файл
-        os.remove(temp_file)
 
 class StopwatchApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Профессиональный тайм-трекер")
-        self.geometry("500x450")  # Увеличили размер окна
+        self.geometry("500x500")
         self.resizable(False, False)
         self.configure(bg="#f0f0f0")
+        
+        # Загрузка конфигурации
+        self.config_data = load_config()
+        self.companies = list(self.config_data["companies"].keys())
+        
+        # Текущие значения
+        self.current_company = self.config_data.get("default_company", self.companies[0])
+        self.current_position = self.config_data["companies"][self.current_company]["positions"][0]
+        self.current_employee = self.config_data["companies"][self.current_company]["employees"][0]
         
         # Инициализация переменных состояния
         self.has_session = False
@@ -66,7 +79,9 @@ class StopwatchApp(tk.Tk):
         os.makedirs(self.data_dir, exist_ok=True)
         os.makedirs(self.reports_dir, exist_ok=True)
         
-        self.data_file = os.path.join(self.data_dir, f"sessions_{self.sanitize_filename(EMPLOYEE_NAME)}.json")
+        # Файл данных будет создан при выборе сотрудника
+        self.data_file = None
+        self.update_data_file()
         
         # Загрузка сохраненных сессий
         self.load_sessions()
@@ -76,6 +91,7 @@ class StopwatchApp(tk.Tk):
         self.style.configure("TButton", font=("Arial", 10), padding=6)
         self.style.configure("Title.TLabel", font=("Arial", 14, "bold"), background="#f0f0f0")
         self.style.configure("Time.TLabel", font=("Courier New", 18, "bold"), background="#f0f0f0")
+        self.style.configure("TCombobox", padding=5)
         
         # Создание элементов GUI
         self.create_widgets()
@@ -85,6 +101,13 @@ class StopwatchApp(tk.Tk):
         
         # Обработка закрытия окна
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+    
+    def update_data_file(self):
+        """Обновляет путь к файлу данных на основе текущего сотрудника"""
+        self.data_file = os.path.join(
+            self.data_dir, 
+            f"sessions_{self.sanitize_filename(self.current_employee)}.json"
+        )
     
     def sanitize_filename(self, name):
         """Очищает имя файла от недопустимых символов"""
@@ -105,28 +128,33 @@ class StopwatchApp(tk.Tk):
                                    font=("Arial", 16, "bold"))
         self.title_label.pack(pady=10)
         
-        # Панель информации (теперь в 2 строки)
-        self.info_frame = tk.Frame(self, bg="#e6f2ff", bd=1, relief="groove")
-        self.info_frame.pack(fill="x", padx=15, pady=5)
+        # Панель выбора компании, должности и сотрудника
+        self.select_frame = tk.Frame(self, bg="#e6f2ff", bd=1, relief="groove")
+        self.select_frame.pack(fill="x", padx=15, pady=5)
         
-        # Сотрудник - отдельная строка
-        self.employee_frame = tk.Frame(self.info_frame, bg="#e6f2ff")
-        self.employee_frame.pack(fill="x", padx=10, pady=2)
+        # Выбор компании
+        self.company_frame = tk.Frame(self.select_frame, bg="#e6f2ff")
+        self.company_frame.pack(fill="x", padx=10, pady=2)
         
-        self.employee_label = tk.Label(self.employee_frame, 
-                                     text="Сотрудник:", 
+        self.company_label = tk.Label(self.company_frame, 
+                                     text="Компания:", 
                                      font=("Arial", 9, "bold"),
                                      bg="#e6f2ff")
-        self.employee_label.pack(side="left")
+        self.company_label.pack(side="left")
         
-        self.employee_value = tk.Label(self.employee_frame, 
-                                     text=EMPLOYEE_NAME, 
-                                     font=("Arial", 9),
-                                     bg="#e6f2ff")
-        self.employee_value.pack(side="left", padx=(0, 10))
+        self.company_var = tk.StringVar(value=self.current_company)
+        self.company_combobox = ttk.Combobox(
+            self.company_frame, 
+            textvariable=self.company_var,
+            values=self.companies,
+            state="readonly",
+            width=25
+        )
+        self.company_combobox.pack(side="left", padx=5)
+        self.company_combobox.bind("<<ComboboxSelected>>", self.on_company_selected)
         
-        # Должность - отдельная строка
-        self.position_frame = tk.Frame(self.info_frame, bg="#e6f2ff")
+        # Выбор должности
+        self.position_frame = tk.Frame(self.select_frame, bg="#e6f2ff")
         self.position_frame.pack(fill="x", padx=10, pady=2)
         
         self.position_label = tk.Label(self.position_frame, 
@@ -135,27 +163,41 @@ class StopwatchApp(tk.Tk):
                                      bg="#e6f2ff")
         self.position_label.pack(side="left")
         
-        self.position_value = tk.Label(self.position_frame, 
-                                     text=EMPLOYEE_POSITION, 
-                                     font=("Arial", 9),
+        # Автоматическое обновление должностей при выборе компании
+        positions = self.config_data["companies"][self.current_company]["positions"]
+        self.position_var = tk.StringVar(value=self.current_position)
+        self.position_combobox = ttk.Combobox(
+            self.position_frame, 
+            textvariable=self.position_var,
+            values=positions,
+            state="readonly",
+            width=25
+        )
+        self.position_combobox.pack(side="left", padx=5)
+        self.position_combobox.bind("<<ComboboxSelected>>", self.on_position_selected)
+        
+        # Выбор сотрудника
+        self.employee_frame = tk.Frame(self.select_frame, bg="#e6f2ff")
+        self.employee_frame.pack(fill="x", padx=10, pady=(2, 5))
+        
+        self.employee_label = tk.Label(self.employee_frame, 
+                                     text="Сотрудник:", 
+                                     font=("Arial", 9, "bold"),
                                      bg="#e6f2ff")
-        self.position_value.pack(side="left", padx=(0, 10))
+        self.employee_label.pack(side="left")
         
-        # Компания - отдельная строка
-        self.company_frame = tk.Frame(self.info_frame, bg="#e6f2ff")
-        self.company_frame.pack(fill="x", padx=10, pady=2)
-        
-        self.company_label = tk.Label(self.company_frame, 
-                                    text="Компания:", 
-                                    font=("Arial", 9, "bold"),
-                                    bg="#e6f2ff")
-        self.company_label.pack(side="left")
-        
-        self.company_value = tk.Label(self.company_frame, 
-                                    text=COMPANY_NAME, 
-                                    font=("Arial", 9),
-                                    bg="#e6f2ff")
-        self.company_value.pack(side="left")
+        # Автоматическое обновление сотрудников при выборе компании
+        employees = self.config_data["companies"][self.current_company]["employees"]
+        self.employee_var = tk.StringVar(value=self.current_employee)
+        self.employee_combobox = ttk.Combobox(
+            self.employee_frame, 
+            textvariable=self.employee_var,
+            values=employees,
+            state="readonly",
+            width=25
+        )
+        self.employee_combobox.pack(side="left", padx=5)
+        self.employee_combobox.bind("<<ComboboxSelected>>", self.on_employee_selected)
         
         # Панель времени
         self.time_frame = tk.Frame(self, bg="#f0f0f0")
@@ -229,7 +271,7 @@ class StopwatchApp(tk.Tk):
         
         # Статус бар
         self.status_var = tk.StringVar()
-        self.status_var.set(f"Готов | Сессий: {len(self.sessions)}")
+        self.status_var.set(f"Готов | Сессий: {len(self.sessions)} | Сотрудник: {self.current_employee}")
         self.status_bar = tk.Label(self, 
                                   textvariable=self.status_var, 
                                   bd=1, 
@@ -239,8 +281,60 @@ class StopwatchApp(tk.Tk):
                                   font=("Arial", 9))
         self.status_bar.pack(side="bottom", fill="x", padx=5, pady=2)
     
+    def on_company_selected(self, event):
+        """Обработчик выбора компании"""
+        new_company = self.company_var.get()
+        if new_company != self.current_company:
+            # Завершаем текущую сессию при смене компании
+            if self.has_session:
+                if messagebox.askyesno("Смена компании", 
+                                      "При смене компании текущая сессия будет завершена. Продолжить?"):
+                    self.end_timer()
+                else:
+                    self.company_var.set(self.current_company)
+                    return
+            
+            self.current_company = new_company
+            self.current_position = self.config_data["companies"][new_company]["positions"][0]
+            self.position_var.set(self.current_position)
+            self.position_combobox['values'] = self.config_data["companies"][new_company]["positions"]
+            
+            self.current_employee = self.config_data["companies"][new_company]["employees"][0]
+            self.employee_var.set(self.current_employee)
+            self.employee_combobox['values'] = self.config_data["companies"][new_company]["employees"]
+            
+            # Обновляем файл данных и загружаем сессии
+            self.update_data_file()
+            self.load_sessions()
+            self.status_var.set(f"Компания изменена | Сессий: {len(self.sessions)} | Сотрудник: {self.current_employee}")
+    
+    def on_position_selected(self, event):
+        """Обработчик выбора должности"""
+        self.current_position = self.position_var.get()
+    
+    def on_employee_selected(self, event):
+        """Обработчик выбора сотрудника"""
+        new_employee = self.employee_var.get()
+        if new_employee != self.current_employee:
+            # Завершаем текущую сессию при смене сотрудника
+            if self.has_session:
+                if messagebox.askyesno("Смена сотрудника", 
+                                      "При смене сотрудника текущая сессия будет завершена. Продолжить?"):
+                    self.end_timer()
+                else:
+                    self.employee_var.set(self.current_employee)
+                    return
+            
+            self.current_employee = new_employee
+            
+            # Обновляем файл данных и загружаем сессии
+            self.update_data_file()
+            self.load_sessions()
+            self.status_var.set(f"Сотрудник изменен | Сессий: {len(self.sessions)} | Сотрудник: {self.current_employee}")
+    
     def load_sessions(self):
         """Загрузка сессий из JSON файла"""
+        self.sessions = []
         if os.path.exists(self.data_file):
             try:
                 with open(self.data_file, 'r', encoding='utf-8') as f:
@@ -384,7 +478,7 @@ class StopwatchApp(tk.Tk):
         try:
             # Создаем имя файла отчета
             report_date = datetime.now().strftime("%Y-%m-%d")
-            filename = f"{EMPLOYEE_NAME}_{COMPANY_NAME}_worktime_report_{report_date}.pdf"
+            filename = f"{self.current_employee}_{self.current_company}_worktime_report_{report_date}.pdf"
             filename = "".join(c for c in filename if c.isalnum() or c in " _-().")
             filepath = os.path.join(self.reports_dir, filename)
             
@@ -407,17 +501,17 @@ class StopwatchApp(tk.Tk):
             pdf.set_font("DejaVu", "B", 9)  # Уменьшен размер шрифта
             pdf.cell(50, 6, "Компания:", 0, 0)  # Уменьшена ширина ячейки
             pdf.set_font("DejaVu", "", 9)
-            pdf.cell(0, 6, COMPANY_NAME, 0, 1)
+            pdf.cell(0, 6, self.current_company, 0, 1)
             
             pdf.set_font("DejaVu", "B", 9)
             pdf.cell(50, 6, "Сотрудник:", 0, 0)
             pdf.set_font("DejaVu", "", 9)
-            pdf.cell(0, 6, EMPLOYEE_NAME, 0, 1)
+            pdf.cell(0, 6, self.current_employee, 0, 1)
             
             pdf.set_font("DejaVu", "B", 9)
             pdf.cell(50, 6, "Должность:", 0, 0)
             pdf.set_font("DejaVu", "", 9)
-            pdf.cell(0, 6, EMPLOYEE_POSITION, 0, 1)
+            pdf.cell(0, 6, self.current_position, 0, 1)
             
             pdf.set_font("DejaVu", "B", 9)
             pdf.cell(50, 6, "Дата формирования:", 0, 0)
